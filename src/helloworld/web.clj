@@ -3,6 +3,7 @@
             [compojure.handler :refer [site]]
             [compojure.route :as route]
             [clojure.java.io :as io]
+            [ring.middleware.params :as params]
             [ring.middleware.stacktrace :as trace]
             [ring.middleware.session :as session]
             [ring.middleware.session.cookie :as cookie]
@@ -12,7 +13,6 @@
             [environ.core :refer [env]]))
 
 (defn- authenticated? [user pass]
-  ;; TODO: heroku config:add REPL_USER=[...] REPL_PASSWORD=[...]
   (= [user pass] [(env :repl-user false) (env :repl-password false)]))
 
 (def ^:private drawbridge
@@ -27,6 +27,24 @@
        {:status 200
         :headers {"Content-Type" "text/plain"}
         :body (pr-str ["Hello" :from 'Heroku])})
+  (GET "/req" {:as req}
+       {:status 200
+        :headers {"Content-Type" "text/plain"}
+        :body (pr-str req)})
+  ;; TODO Make the repetitive code a function.
+  ;; TODO Create a route-to-reducer map, and use it to configure the app.
+  (GET "/add" {:as req}
+       {:status 200
+        :headers {"Content-Type" "text/plain"}
+        :body (pr-str (reduce + (map #(Float/parseFloat (% 0)) (re-seq #"[+-]?\d+(\.\d+)?" (:query-string req)))))})
+  (GET "/subtract" {:as req}
+       {:status 200
+        :headers {"Content-Type" "text/plain"}
+        :body (pr-str (reduce - (map #(Float/parseFloat (% 0)) (re-seq #"[+-]?\d+(\.\d+)?" (:query-string req)))))})
+  (GET "/multiply" {:as req}
+       {:status 200
+        :headers {"Content-Type" "text/plain"}
+        :body (pr-str (reduce * (map #(Float/parseFloat (% 0)) (re-seq #"[+-]?\d+(\.\d+)?" (:query-string req)))))})
   (ANY "*" []
        (route/not-found (slurp (io/resource "404.html")))))
 
@@ -40,12 +58,12 @@
 
 (defn -main [& [port]]
   (let [port (Integer. (or port (env :port) 5000))
-        ;; TODO: heroku config:add SESSION_SECRET=$RANDOM_16_CHARS
         store (cookie/cookie-store {:key (env :session-secret)})]
     (jetty/run-jetty (-> #'app
                          ((if (env :production)
                             wrap-error-page
                             trace/wrap-stacktrace))
+                         params/wrap-params
                          (site {:session {:store store}}))
                      {:port port :join? false})))
 
